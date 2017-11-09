@@ -1,0 +1,245 @@
+
+# coding: utf-8
+
+# # Advance 1: "Search results" Screen
+
+# ### Import Libraries
+
+# In[3]:
+
+from pymongo import MongoClient
+import pandas as pd
+import plotly
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+import random
+import json
+get_ipython().magic('matplotlib inline')
+
+
+# ### Database Connection
+
+# In[4]:
+
+mongo_host='mongodb://jpdlarosa:Ghiskard-01@sandbox-shard-00-00-6n24g.mongodb.net:27017,sandbox-shard-00-01-6n24g.mongodb.net:27017,sandbox-shard-00-02-6n24g.mongodb.net:27017/test?ssl=true&replicaSet=Sandbox-shard-0&authSource=admin'
+db = "Tw_Tes1"
+collection = "twitter_search"
+client = MongoClient('mongodb://jpdlarosa:Ghiskard-01@sandbox-shard-00-00-6n24g.mongodb.net:27017,sandbox-shard-00-01-6n24g.mongodb.net:27017,sandbox-shard-00-02-6n24g.mongodb.net:27017/test?ssl=true&replicaSet=Sandbox-shard-0&authSource=admin')
+twitter_search = client[db][collection]
+print (twitter_search)
+
+
+# ### Number of tweets
+
+# In[5]:
+
+Tweet_Number=twitter_search.find().count()
+print(Tweet_Number)
+#Number of tweets Listened:
+
+
+# ### Map visualization
+
+# In[6]:
+
+country_codes=twitter_search.distinct("place.country_code")
+countries=twitter_search.distinct("place.country")
+incidence=[]
+valid=twitter_search.find().count()-twitter_search.find({"place.country_code":None}).count()
+for x in country_codes:
+    incidence.append(round(twitter_search.find({"place.country_code":x}).count()*100/valid,2))
+d={'COUNTRY': countries,
+   'INCIDENCE': incidence,
+   'CODE':country_codes}
+df=pd.DataFrame(d)
+data = [ dict(
+        type = 'choropleth',
+        locations = df['CODE'],
+        z = df['INCIDENCE'],
+        text = df['COUNTRY'],
+        autocolorscale = True,
+        reversescale = False,
+        marker = dict(
+            line = dict (
+                color = 'rgb(180,180,180)',
+                width = 0.5
+            ) ),
+        colorbar = dict(
+            autotick = False,
+            ticksuffix = '%',
+            title = 'Tweet percentage'),
+      ) ]
+layout = dict(
+    title = 'Tweets by country (%)',
+    geo = dict(
+        showframe = False,
+        showland=True,
+        landcolor='rgba(29, 26, 9, 0.03)',
+        showcoastlines = False,
+        projection = dict(
+            type = 'Mercator'
+        )
+    )
+)
+
+fig = dict( data=data, layout=layout )
+plotly.plotly.iplot( fig, validate=False, filename='d3-world-map' )
+
+
+
+
+# ### MentionCloud
+
+# In[7]:
+
+texts1=""
+hashtags=twitter_search.distinct("entities.user_mentions.screen_name")
+for x in hashtags:
+    texts1=texts1+x+" "
+wordcloud = WordCloud(max_words=3000).generate(texts1)
+plt.figure()
+plt.imshow(wordcloud, interpolation="bilinear")
+plt.axis("off")
+plt.show()
+
+
+# ### Hashtag Cloud
+
+# In[8]:
+
+texts1=""
+hashtags=twitter_search.distinct("entities.hashtags.text")
+for x in hashtags:
+    texts1=texts1+x+" "
+wordcloud = WordCloud(max_words=3000).generate(texts1)
+plt.figure()
+plt.imshow(wordcloud, interpolation="bilinear")
+plt.axis("off")
+plt.show()
+
+
+# ### Word Cloud
+
+# In[9]:
+
+texts=""
+
+for tweet in twitter_search.find():
+    texts = texts + tweet["text"]
+texts=texts.replace("https",(""))
+texts=texts.replace("gave",(""))
+texts=texts.replace("co",(""))
+texts=texts.replace("McDonald",(""))
+wordcloud = WordCloud(max_words=3000).generate(texts)
+plt.figure()
+plt.imshow(wordcloud, interpolation="bilinear")
+plt.axis("off")
+plt.show()
+
+
+# ### Countries & Languages
+
+# #### Languages
+
+# In[10]:
+
+lang_count=[]
+ls=[]
+lang=twitter_search.distinct("lang")
+valid_lang=twitter_search.find().count()-twitter_search.find({"lang":None}).count()
+for x in lang:
+    n=round(twitter_search.find({"lang":x}).count()*100/valid_lang,1)
+    if n>=0.5:
+        lang_count.append(n)
+        ls.append(x)
+plt.pie(lang_count,labels=ls, autopct='%1.1f%%')
+
+
+# #### Countries
+
+# In[11]:
+
+df.plot.bar('COUNTRY','INCIDENCE')
+
+
+# ### Sources
+
+# In[12]:
+
+sources=twitter_search.distinct("source")
+csources=[]
+percentage=[]
+d_1={'SOURCE': csources,'%': percentage}
+df_1=pd.DataFrame(d_1)
+for x in sources:
+    nper=round(twitter_search.find({"source":x}).count()*100/Tweet_Number)
+    clean=x.partition('>')[-1].rpartition('<')[0]
+    if nper>0:
+     df_1.loc[-1] = [nper,clean]  # adding a row
+     df_1.index = df_1.index + 1  # shifting indexdf_1
+df_1.plot.bar('SOURCE','%')
+
+
+# ### Retweet information
+
+# #### Retweets
+
+# In[24]:
+
+pw=twitter_search.find_one({},{'user.screen_name':1,'retweeted_status.retweet_count':1,'_id':0},sort=[('retweeted_status.retweet_count', -1)])
+max_retweets=pw['retweeted_status']['retweet_count']
+max_retweets
+c=[]
+d=[]
+for x in range(0, 5):
+    a=((max_retweets/5)*x)+1
+    b=(max_retweets/5)*(x+1)
+    c.append("%d - %d"%(a,b))
+    d.append(twitter_search.find( { "retweeted_status.retweet_count": { '$gte': a, '$lte': b } } ).count())
+df_2=pd.DataFrame({'RETWEET RANGE':c,'RETWEETS':d})
+df_2
+
+
+# #### Table
+
+# In[25]:
+
+df_2.plot.bar('RETWEET RANGE','RETWEETS')
+
+
+# #### Most retweeted
+
+# In[19]:
+
+class Tweet(object):
+    def __init__(self, embed_str=None):
+        self.embed_str = embed_str
+
+    def _repr_html_(self):
+        return self.embed_str
+
+Mr = ("""
+<blockquote class="twitter-tweet"><p lang="en" dir="ltr">If I give 10 apples to one person and no apples to nine people, the average person has one apple. <br><br>Why are nine people mad at me? <a href="https://t.co/ezQWsReU6i">https://t.co/ezQWsReU6i</a></p>&mdash; Franklin Leonard (@franklinleonard) <a href="https://twitter.com/franklinleonard/status/922254673175818240?ref_src=twsrc%5Etfw">October 23, 2017</a></blockquote>
+<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+""")
+As = ("""
+<a class="twitter-timeline" data-partner="tweetdeck" href="https://twitter.com/pepe_dlr/lists/list-1?ref_src=twsrc%5Etfw">A Twitter List by pepe_dlr</a> <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+""")
+
+
+# In[20]:
+
+Tweet(Mr)
+
+
+# ### Visualizing Tweets 
+
+# In[21]:
+
+Tweet(As)
+
+
+# In[ ]:
+
+
+
